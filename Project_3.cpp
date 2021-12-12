@@ -1,3 +1,14 @@
+/**
+ * @file main.cpp
+ * @author Jennifer Freeman (freemjc@mcmaster.ca)
+ * @brief 
+ * @version 0.1
+ * @date 2021-12-11
+ * 
+ * @copyright Copyright (c) 2021
+ * 
+ */
+
 #include <iostream>
 #include <fstream>
 #include <string>
@@ -7,29 +18,56 @@
 #include <complex>
 using namespace std;
 
+/**
+ * @brief WAV audio file class.
+ * 
+ */
 class wav_file
 {
 public:
-    //constructor
+    // ===========
+    // Constructor
+    // ===========
+
+    /**
+      * @brief Construct a new wav file object.
+      * 
+      * @param input_string string of wav file name, (ex. "filename.wav").
+      */
     wav_file(const string &input_string)
     {
         read_wav(input_string);
     }
 
+    // =======================
+    // Public member functions
+    // =======================
+
+    /**
+     * @brief Read in WAV file.
+     * 
+     * @param input_string string of wav file name, (ex. "filename.wav").
+     */
     void read_wav(const string &input_string)
     {
-        //open input file
+
+        string s;
+        string wav_identifier;
+        string current;
+        uint64_t data_size = 0;
+        uint64_t padded_data_size = 0;
+        uint64_t power = 1; //what happens if power is too large
+        uint64_t num_16bits = data_size / 2;
+
         ifstream input(input_string, ios::binary);
 
         if (!input.is_open())
         {
             cout << "Error opening input file!";
-        }
-        string s;
-        string wav_identifier;
-        string current;
-        //getline(input, s);
+        };
+
         input.seekg(8);
+
         for (uint32_t i = 0; i < 4; i++)
         {
             current = (char)input.get();
@@ -40,27 +78,23 @@ public:
         {
             throw invalid_argument("Not a .WAV file.");
         }
+
         input.seekg(0);
         getline(input, s);
 
-        //does string stream help?
-        //string data_string;
         //header is 44 bytes
         header = s.substr(0, 44);
         cout << header << "\n";
-        uint64_t data_size = 0;
-        uint64_t padded_data_size = 0;
-        uint64_t power = 1; //what happens if power is too large
 
         data_size = *(int32_t *)&header[40]; //size in bytes
         cout << data_size;
-        //does data size have to be mod 2
+
         //check if mod2, else there is a padding byte
         if (data_size % 2 != 0)
         {
             data_size = data_size + 1;
         }
-        uint64_t num_16bits = data_size / 2;
+
         while (power < num_16bits) //what to do if num_16bits is too large
         {
             power *= 2;
@@ -69,7 +103,6 @@ public:
         cout << num_16bits << "\n";
         cout << power << "\n";
 
-        //char temp;
         int16_t temp;
         cout << "char " << sizeof(char) << "\n";
         cout << "int16_t " << sizeof(int16_t) << "\n";
@@ -79,9 +112,6 @@ public:
 
             input.read((char *)&temp, sizeof(int16_t)); //possibly working
             data.push_back((int16_t)temp);
-            //data.push_back((double)temp);
-
-            //cout << "data: " << data[i] << "\n";
         }
 
         //difference between power and audio size
@@ -90,20 +120,24 @@ public:
         cout << "padding size" << padded_data_size << "\n";
         data.resize(power);
 
-        //data.insert(data.end(), padded_data_size, 0); //data size is a power of 2, catch exceptions here?
-
-        //close input file
-        cout << data.size() << "\n";
-        cout << data.at(262140) << "\n";
-
         input.close();
     }
 
+    /**
+     * @brief Size of data chunk in WAV file.
+     * 
+     * @return int32_t 
+     */
     int32_t datasize()
     {
         return data.size();
     }
 
+    /**
+     * @brief Get the data object and convert to complex<double>.
+     * 
+     * @return vector<complex<double>> 
+     */
     vector<complex<double>> get_data()
     {
         vector<complex<double>> new_vec(data.begin(), data.end());
@@ -111,26 +145,61 @@ public:
     }
 
 private:
+    // ============
+    // Private data
+    // ============
+
+    /**
+     * @brief Header in WAV file.
+     * 
+     */
     string header;
-    //is it unsigned?
+
+    /**
+     * @brief Data in WAV file.
+     * 
+     */
     vector<int16_t> data;
-    //vector<complex<double>> data;
+
     //might want to add, sampling rate, data size etc.
 };
 
+/**
+ * @brief Fast Fourier transform class.
+ * 
+ */
 class fft
 {
 public:
+    // ===========
+    // Constructor
+    // ===========
+
+    /**
+     * @brief Construct a new fft object.
+     * 
+     * @param dat data to perform FFT on.
+     */
     fft(vector<complex<double>> &dat)
     {
         x = cooley_tukey(dat);
     }
 
+    // =======================
+    // Public member functions
+    // =======================
+
+    /**
+     * @brief Cooley-Tukey radix-2 FFT algorithm.
+     * 
+     * @param dat data to perform FFT on.
+     * @return vector<complex<double>> transformed data.
+     */
     vector<complex<double>> cooley_tukey(vector<complex<double>> &dat)
     {
-        //vector<complex<double>> fft_vec;
+
         const double pi = acos(-1.0L);
-        //get data size from wav_file
+
         //get data from wav_file
         uint64_t N = dat.size();
         if (N == 1)
@@ -145,57 +214,37 @@ public:
             vector<complex<double>> even;
             vector<complex<double>> odd;
 
-            //complex<double> even_dft = 0;
-            //complex<double> odd_dft = 0;
-
-            //const complex<double> imag = 1.0i;
-
+            //do I need to reserve?
             //even.reserve(N_2);
             //odd.reserve(N_2);
-            // cout << even.max_size() << "\n";
-            // cout << odd.max_size() << "\n";
-            //do I need to -1, I don't think so
-            // cout << "N is " << N << "\n";
-            //double N = 166454;
 
             for (uint64_t i = 0; i < N_2; i++)
             {
                 even.push_back(dat[2 * i]);
                 odd.push_back(dat[2 * i + 1]);
-                //cout << "i" << i << "\n";
             }
 
+            //recursive
             cooley_tukey(even);
             cooley_tukey(odd);
-
-            // cout << "N is " << N << "\n";
-            //cout << "even is " << even.size() << "\n";
-            //cout << "odd is " << odd.size() << "\n";
 
             complex<double> q = 0;
             for (uint64_t k = 0; k < N_2; k++)
 
             {
-                //new code here
-                q = polar(1.0, (-2.0 * pi * (double)k) / (N)) * odd[k];
-                //cout << even[k] + q << "\n";
-                dat.at(k) = even.at(k) + q;
-                dat[k + N_2] = even[k] - q;
 
-                q = 0; //probably don't need to do this
+                q = polar(1.0, (-2.0 * pi * (double)k) / (N)) * odd[k];
+                dat[k] = even[k] + q;
+                dat[k + N_2] = even[k] - q;
             }
 
             cout << "end of fft \n";
         }
-        // cout << "size of x" << x.size() << "\n";
-
-        // if (x.size() > 0)
-        // {
-        //     cout << "x at 0" << x.at(0) << "\n";
-        // }
 
         return dat;
     }
+
+    //might not need this function
     void write_file()
     {
         FILE *file_ptr = NULL;
@@ -217,6 +266,7 @@ public:
 
         fclose(file_ptr);
     }
+    //might not need this function
     void print()
     {
         for (uint64_t i = 0; i < x.size(); i++)
@@ -225,6 +275,7 @@ public:
             cout << current << "\n";
         }
     }
+    //might not need this function
     void min_max()
     {
         double min_val = 2000000000;
@@ -246,32 +297,66 @@ public:
         cout << "max val " << max_val << "\n";
         cout << "min val " << min_val << "\n";
     }
+
+    /**
+     * @brief Get the data object.
+     * 
+     * @return vector<complex<double>> 
+     */
     vector<complex<double>> get_data()
     {
         return x; //is this bad, making a copy?
     }
 
 private:
+    // ============
+    // Private data
+    // ============
+
+    /**
+     * @brief FFT values.
+     * 
+     */
     vector<complex<double>> x;
 };
 
+/**
+ * @brief Inverse Fast Fourier transform class.
+ * 
+ */
 class i_fft
 {
 public:
-    //constructor
+    // ===========
+    // Constructor
+    // ===========
+
+    /**
+     * @brief Construct a new inverse fft object.
+     * 
+     * @param dft values to perform inverse FFT on.
+     */
     i_fft(vector<complex<double>> &dft)
     {
         y = inverse(dft);
     }
 
+    // =======================
+    // Public member functions
+    // =======================
+
+    /**
+     * @brief Inverse Cooley-Tukey radix-2 FFT.
+     * 
+     * @param dft values to perform inverse FFT on.
+     * @return vector<complex<double>> inverse FFT values.
+     */
     vector<complex<double>> inverse(vector<complex<double>> &dft)
     {
         //complex conjugate
         for (uint64_t i = 0; i < dft.size(); i++)
         {
-            //cout << "orig " << dft[i] << "\n";
             dft[i] = conj(dft[i]);
-            //cout << "second " << dft[i] << "\n";
         }
 
         //fft
@@ -284,13 +369,13 @@ public:
         //divide by N
         for (uint64_t i = 0; i < dft.size(); i++)
         {
-            //cout << "orig " << dft[i] << "\n";
             dft[i] = conj(dft[i]) / (double)N;
-            //cout << "second " << dft[i] << "\n";
         }
 
         return dft;
     }
+
+    //not sure if I need this member function
     void write_file()
     {
         FILE *file_ptr = NULL;
@@ -314,6 +399,14 @@ public:
     }
 
 private:
+    // ============
+    // Private data
+    // ============
+
+    /**
+     * @brief Inverse Fast Fourier transform values.
+     * 
+     */
     vector<complex<double>> y;
 };
 
@@ -321,25 +414,27 @@ int main()
 {
     try
     {
-        cout << "size of complex double" << sizeof(complex<double>);
+        vector<complex<double>> input_data;
+        vector<complex<double>> output_data;
+
+        // Read and validate WAV file.
         wav_file input("440_sine.wav");
-        //cout << input.header << "\n"; can;t access member function
 
         cout << input.datasize();
-        vector<complex<double>> dat = input.get_data();
-        fft test(dat);
+        input_data = input.get_data();
+
+        // Compute fast fourier tranform on input WAV file.
+        fft test(input_data);
         cout << "end of algo \n";
 
         //test.min_max();
         test.write_file();
 
-        //inverse
-        vector<complex<double>> out_dat = test.get_data();
-        i_fft output(out_dat);
+        // Compute inverse fast fourier transform on input transformed values.
+        output_data = test.get_data();
+        i_fft output(output_data);
 
         output.write_file();
-
-        //frequncy resolution is sample freq/(num FFT values)
     }
     //catch others, error opening file...
     catch (const invalid_argument &e)
@@ -350,6 +445,6 @@ int main()
     //To Do
     //1. Check exceptions fo all functions being used
     //2. Use index instead of .at() where makes sense
-    //3. change input of fft to vector
-    //4. inverse fft
+    //3. Restrict input file to be of certain size, or split it
+    //4.
 }
