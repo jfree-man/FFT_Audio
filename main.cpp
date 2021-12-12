@@ -79,8 +79,8 @@ public:
         {
 
             input.read((char *)&temp, sizeof(int16_t)); //possibly working
-                                                        // data.push_back((int16_t)temp);
-            data.push_back((double)temp);
+            data.push_back((int16_t)temp);
+            //data.push_back((double)temp);
 
             //cout << "data: " << data[i] << "\n";
         }
@@ -89,7 +89,9 @@ public:
         padded_data_size = power - num_16bits;
 
         cout << "padding size" << padded_data_size << "\n";
-        data.insert(data.end(), padded_data_size, 0); //data size is a power of 2, catch exceptions here?
+        data.resize(power);
+
+        //data.insert(data.end(), padded_data_size, 0); //data size is a power of 2, catch exceptions here?
 
         //close input file
         cout << data.size() << "\n";
@@ -106,16 +108,17 @@ public:
         return data.size();
     }
 
-    vector<complex<double>> &get_data()
+    vector<complex<double>> get_data()
     {
-        return data; //is this bad, making a copy?
+        vector<complex<double>> new_vec(data.begin(), data.end());
+        return new_vec; //is this bad, making a copy?
     }
 
 private:
     string header;
     //is it unsigned?
-    //vector<int16_t> data;
-    vector<complex<double>> data;
+    vector<int16_t> data;
+    //vector<complex<double>> data;
     //might want to add, sampling rate, data size etc.
 };
 
@@ -124,10 +127,11 @@ class fft
 public:
     fft(wav_file &audio)
     {
-        x = cooley_tukey(audio.get_data());
+        vector<complex<double>> dat = audio.get_data();
+        x = cooley_tukey(dat);
     }
 
-    vector<complex<double>> cooley_tukey(const vector<complex<double>> &dat)
+    vector<complex<double>> cooley_tukey(vector<complex<double>> &dat)
     {
         //vector<complex<double>> fft_vec;
         const double pi = acos(-1.0L);
@@ -141,6 +145,8 @@ public:
         else
         {
 
+            double N_2 = N / 2;
+            // cout << "N_2" << N_2 << "\n";
             vector<complex<double>> even;
             vector<complex<double>> odd;
 
@@ -149,24 +155,23 @@ public:
 
             //const complex<double> imag = 1.0i;
 
-            double N_2 = N / 2;
-            even.reserve(N_2);
-            // odd.reserve(N_2);
-            cout << even.max_size() << "\n";
-            cout << odd.max_size() << "\n";
+            //even.reserve(N_2);
+            //odd.reserve(N_2);
+            // cout << even.max_size() << "\n";
+            // cout << odd.max_size() << "\n";
             //do I need to -1, I don't think so
             // cout << "N is " << N << "\n";
             //double N = 166454;
 
             for (uint64_t i = 0; i < N_2; i++)
             {
-                even.push_back(dat.at(2 * i));
-                odd.push_back(dat.at(2 * i + 1));
+                even.push_back(dat[2 * i]);
+                odd.push_back(dat[2 * i + 1]);
                 //cout << "i" << i << "\n";
             }
-            cout << "N_2" << N_2 << "\n";
-            cooley_tukey(&even);
-            cooley_tukey(&odd);
+
+            cooley_tukey(even);
+            cooley_tukey(odd);
 
             // cout << "N is " << N << "\n";
             //cout << "even is " << even.size() << "\n";
@@ -174,47 +179,14 @@ public:
 
             complex<double> q = 0;
             for (uint64_t k = 0; k < N_2; k++)
+
             {
-                //old code here
-                // for (double j = 0; j < N_2; j++) //sum over N/2-1, to capture last value N/2-1
-                // {
-
-                //     //polar(r,theta)
-                //     //m=j, k=i
-                //     //cout << "even at " << j << "is" << even.at(j) << "\n";
-                //     // cout << "odd at " << j << "is" << odd.at(j) << "\n";
-
-                //     //old code here
-                //     //even_dft = even_dft + (even.at(j) * polar(1.0, (-2.0 * pi * j * k) / (N_2)));
-                //     //odd_dft = odd_dft + (odd.at(j) * polar(1.0, (-2.0 * pi * j * k) / (N_2)));
-                // }
-                //even.push_back(even_dft);
-                //odd.push_back(odd_dft);
-
-                //cout << "even_dft " << k << "is" << even_dft << "\n";
-                //cout << "odd_dft" << k << "is" << odd_dft << "\n";
-
-                //old code here
-                // q = polar(1.0, (-2.0 * pi * k) / (N)) * odd_dft;
-                // cout << even_dft + q << "\n";
-                // x.insert(x.begin() + k, even_dft + q);
-                // x.insert(x.begin() + (k + N_2), even_dft - q);
-
                 //new code here
                 q = polar(1.0, (-2.0 * pi * (double)k) / (N)) * odd[k];
                 //cout << even[k] + q << "\n";
-                dat[k] = even[k] + q;
+                dat.at(k) = even.at(k) + q;
                 dat[k + N_2] = even[k] - q;
 
-                //cout << "x at " << k << "is" << x.at(k) << "\n";
-                //cout << "x at " << k + N_2 << "is" << x.at(k + N_2) << "\n";
-                //cout << "capacity: " << x.capacity() << "\n";
-                // cout << "even dft" << even_dft << "\n";
-                // cout << "odd dft" << odd_dft << "\n";
-
-                //old code
-                // even_dft = 0;
-                // odd_dft = 0;
                 q = 0; //probably don't need to do this
             }
 
@@ -229,7 +201,27 @@ public:
 
         return dat;
     }
+    void write_file()
+    {
+        FILE *file_ptr = NULL;
 
+        file_ptr = fopen("fft.txt", "w"); //open file for writing
+        if (file_ptr == NULL)
+        {
+            perror("Cannot open writing file");
+        }
+
+        for (uint64_t jj = 0; jj < x.size(); jj++) //write each row of chain to file
+        {
+            if (fprintf(file_ptr, "%f %f\n", real(x[jj]), imag(x[jj])) < 0)
+            {
+                perror("Error occurred");
+                fclose(file_ptr);
+            }
+        }
+
+        fclose(file_ptr);
+    }
     void print()
     {
         for (uint64_t i = 0; i < x.size(); i++)
@@ -244,36 +236,41 @@ public:
         double max_val = 0;
         for (uint64_t i = 0; i < x.size(); i++)
         {
-            double current = abs(x.at(i));
+            double current = abs(x[i]);
             if (current < min_val)
             {
-                min_val = abs(x.at(i));
+                min_val = current;
             }
             else if (current > max_val)
             {
-                max_val = abs(x.at(i));
+                max_val = current;
             }
+
+            cout << current << "\n";
         }
-        cout << "max val" << max_val << "\n";
-        cout << "min val" << min_val << "\n";
+        cout << "max val " << max_val << "\n";
+        cout << "min val " << min_val << "\n";
     }
 
-private
-    :
-    vector<complex<double>>
-        x;
+private:
+    vector<complex<double>> x;
 };
 
 int main()
 {
     try
     {
-        wav_file input("800_sine.wav");
+        cout << "size of complex double" << sizeof(complex<double>);
+        wav_file input("440_sine.wav");
         //cout << input.header << "\n"; can;t access member function
+
+        cout << input.datasize();
+        vector<complex<double>> dat = input.get_data();
         fft test(input);
         cout << "end of algo \n";
 
-        test.min_max();
+        //test.min_max();
+        test.write_file();
 
         //frequncy resolution is sample freq/(num FFT values)
     }
@@ -285,7 +282,7 @@ int main()
 
     //To Do
     //1. Check exceptions fo all functions being used
-    //2. Use .at() instead of index[] for all vectors, and catch exceptions
-    //3. Add padding bytes to wav_file.data
-    //4. Add recursion to fft
+    //2. Use index instead of .at() where makes sense
+    //3. change input of fft to vector
+    //4. inverse fft
 }
