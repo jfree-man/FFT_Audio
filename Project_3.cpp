@@ -57,7 +57,7 @@ public:
         uint64_t data_size = 0;
         uint64_t padded_data_size = 0;
         uint64_t power = 1; //what happens if power is too large
-        uint64_t num_16bits = data_size / 2;
+        uint64_t num_16bits = 1;
 
         ifstream input(input_string, ios::binary);
 
@@ -94,6 +94,7 @@ public:
         {
             data_size = data_size + 1;
         }
+        num_16bits = data_size / 2;
 
         while (power < num_16bits) //what to do if num_16bits is too large
         {
@@ -126,9 +127,9 @@ public:
     /**
      * @brief Size of data chunk in WAV file.
      * 
-     * @return int32_t 
+     * @return uint64_t
      */
-    int32_t datasize()
+    uint64_t datasize()
     {
         return data.size();
     }
@@ -198,7 +199,7 @@ public:
     vector<complex<double>> cooley_tukey(vector<complex<double>> &dat)
     {
 
-        const double pi = acos(-1.0L);
+        const double pi = acos(-1.0);
 
         //get data from wav_file
         uint64_t N = dat.size();
@@ -209,7 +210,7 @@ public:
         else
         {
 
-            double N_2 = N / 2;
+            double N_2 = (double)N / 2;
             // cout << "N_2" << N_2 << "\n";
             vector<complex<double>> even;
             vector<complex<double>> odd;
@@ -218,7 +219,7 @@ public:
             //even.reserve(N_2);
             //odd.reserve(N_2);
 
-            for (uint64_t i = 0; i < N_2; i++)
+            for (uint64_t i = 0; i < (uint64_t)N_2; i++)
             {
                 even.push_back(dat[2 * i]);
                 odd.push_back(dat[2 * i + 1]);
@@ -229,13 +230,13 @@ public:
             cooley_tukey(odd);
 
             complex<double> q = 0;
-            for (uint64_t k = 0; k < N_2; k++)
+            for (uint64_t k = 0; k < (uint64_t)N_2; k++)
 
             {
 
-                q = polar(1.0, (-2.0 * pi * (double)k) / (N)) * odd[k];
+                q = polar(1.0, (-2.0 * pi * (double)k) / (double)(N)) * odd[k];
                 dat[k] = even[k] + q;
-                dat[k + N_2] = even[k] - q;
+                dat[k + (uint64_t)N_2] = even[k] - q;
             }
 
             cout << "end of fft \n";
@@ -363,7 +364,7 @@ public:
         fft out(dft);
 
         dft = out.get_data();
-        int32_t N = dft.size();
+        uint64_t N = dft.size();
 
         //complex conjugate
         //divide by N
@@ -446,5 +447,5 @@ int main()
     //1. Check exceptions fo all functions being used
     //2. Use index instead of .at() where makes sense
     //3. Restrict input file to be of certain size, or split it
-    //4.
+    //4. Consistenct with FFt, fft, include DFT
 }
