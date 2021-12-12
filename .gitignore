@@ -3,3 +3,5 @@
 # Ignore compiled object files and executables
 *.o
 *.exe
+ifft.txt
+fft.txt
