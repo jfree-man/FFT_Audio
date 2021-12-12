@@ -10,7 +10,6 @@ using namespace std;
 class wav_file
 {
 public:
-    //maybe input should be a string stream, instead of file
     //constructor
     wav_file(const string &input_string)
     {
@@ -99,10 +98,7 @@ public:
 
         input.close();
     }
-    // int16_t assign(const uint32_t &i) //dumb name, should rename
-    // {
-    //     return data.at(i);
-    // }
+
     int32_t datasize()
     {
         return data.size();
@@ -125,9 +121,8 @@ private:
 class fft
 {
 public:
-    fft(wav_file &audio)
+    fft(vector<complex<double>> &dat)
     {
-        vector<complex<double>> dat = audio.get_data();
         x = cooley_tukey(dat);
     }
 
@@ -251,9 +246,75 @@ public:
         cout << "max val " << max_val << "\n";
         cout << "min val " << min_val << "\n";
     }
+    vector<complex<double>> get_data()
+    {
+        return x; //is this bad, making a copy?
+    }
 
 private:
     vector<complex<double>> x;
+};
+
+class i_fft
+{
+public:
+    //constructor
+    i_fft(vector<complex<double>> &dft)
+    {
+        y = inverse(dft);
+    }
+
+    vector<complex<double>> inverse(vector<complex<double>> &dft)
+    {
+        //complex conjugate
+        for (uint64_t i = 0; i < dft.size(); i++)
+        {
+            //cout << "orig " << dft[i] << "\n";
+            dft[i] = conj(dft[i]);
+            //cout << "second " << dft[i] << "\n";
+        }
+
+        //fft
+        fft out(dft);
+
+        dft = out.get_data();
+        int32_t N = dft.size();
+
+        //complex conjugate
+        //divide by N
+        for (uint64_t i = 0; i < dft.size(); i++)
+        {
+            //cout << "orig " << dft[i] << "\n";
+            dft[i] = conj(dft[i]) / (double)N;
+            //cout << "second " << dft[i] << "\n";
+        }
+
+        return dft;
+    }
+    void write_file()
+    {
+        FILE *file_ptr = NULL;
+
+        file_ptr = fopen("ifft.txt", "w"); //open file for writing
+        if (file_ptr == NULL)
+        {
+            perror("Cannot open writing file");
+        }
+
+        for (uint64_t jj = 0; jj < y.size(); jj++) //write each row of chain to file
+        {
+            if (fprintf(file_ptr, "%f %f\n", real(y[jj]), imag(y[jj])) < 0)
+            {
+                perror("Error occurred");
+                fclose(file_ptr);
+            }
+        }
+
+        fclose(file_ptr);
+    }
+
+private:
+    vector<complex<double>> y;
 };
 
 int main()
@@ -266,11 +327,17 @@ int main()
 
         cout << input.datasize();
         vector<complex<double>> dat = input.get_data();
-        fft test(input);
+        fft test(dat);
         cout << "end of algo \n";
 
         //test.min_max();
         test.write_file();
+
+        //inverse
+        vector<complex<double>> out_dat = test.get_data();
+        i_fft output(out_dat);
+
+        output.write_file();
 
         //frequncy resolution is sample freq/(num FFT values)
     }
