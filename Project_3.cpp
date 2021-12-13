@@ -3,7 +3,7 @@
  * @author Jennifer Freeman (freemjc@mcmaster.ca)
  * @brief 
  * @version 0.1
- * @date 2021-12-11
+ * @date 2021-12-12
  * 
  * @copyright Copyright (c) 2021
  * 
@@ -58,6 +58,7 @@ public:
         string wav_identifier;           // String to store expected WAV identifier.
         string current;                  // Current input value.
         int16_t temp;                    // Temporary variable to store input values.
+        uint32_t sampling_rate;          // Sampling rate in WAV file.
         uint64_t data_section = 0;       // Size of data section in file.
         uint64_t power = 1;              // Nearest power of 2 to data size.
         uint64_t data_size = 1;          // Size of data in 2-bytes.
@@ -128,6 +129,10 @@ public:
         data.resize(power);
 
         input.close();
+
+        // Get sampling rate.
+        sampling_rate = *(uint32_t *)&header[24];
+        f_samp = sampling_rate;
     }
 
     /**
@@ -161,6 +166,16 @@ public:
         return header;
     }
 
+    /**
+     * @brief Get the sampling rate object.
+     * 
+     * @return uint32_t 
+     */
+    uint32_t get_samp()
+    {
+        return f_samp;
+    }
+
 private:
     // ============
     // Private data
@@ -178,7 +193,11 @@ private:
      */
     vector<int16_t> data;
 
-    //might want to add, sampling rate, data size etc.
+    /**
+     * @brief sampling rate
+     * 
+     */
+    uint32_t f_samp;
 };
 
 /**
@@ -265,9 +284,15 @@ public:
      * @param fft_values FFT data.
      * @return vector<complex<double>> 
      */
-    vector<complex<double>> low_pass(vector<complex<double>> &fft_values, uint32_t &threshold)
+    vector<complex<double>> low_pass(vector<complex<double>> &fft_values, uint32_t &freq, uint32_t &f_samp)
     {
-        for (uint32_t i = threshold; i < (fft_values.size() - threshold); i++)
+        uint32_t N = (uint32_t)fft_values.size();
+
+        // Compute threshold index
+        double threshold = round((N * freq) / f_samp);
+
+        // Remove frequency domain outside of threshold
+        for (uint32_t i = (uint32_t)threshold; i < ((uint32_t)fft_values.size() - (uint32_t)threshold); i++)
         {
             fft_values[i] = 0;
         }
@@ -491,9 +516,10 @@ int main(int argc, char *argv[])
 
             frequency input_freq(argv[3]);
             uint32_t freq = input_freq.get_data();
+            uint32_t sampling_rate = input.get_samp();
 
             // Compute low pass filter on frequency domain
-            output_data = dft.low_pass(freq_data, freq);
+            output_data = dft.low_pass(freq_data, freq, sampling_rate);
 
             // Compute inverse FFT on input FFT values.
             i_fft output(output_data);
