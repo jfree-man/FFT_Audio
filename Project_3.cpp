@@ -279,10 +279,12 @@ public:
     }
 
     /**
-     * @brief Simple low pass filter to remove freqencies above a threshold.
+     * @brief Low-pass sharp-cut digital filter.
      * 
-     * @param fft_values FFT data.
-     * @return vector<complex<double>> 
+     * @param fft_values vector of FFT values.
+     * @param freq frequency to apply filter with.
+     * @param f_samp sampling rate.
+     * @return vector<complex<double>> filtered FFT values.
      */
     vector<complex<double>> low_pass(vector<complex<double>> &fft_values, uint32_t &freq, uint32_t &f_samp)
     {
