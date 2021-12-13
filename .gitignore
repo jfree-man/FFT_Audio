@@ -5,3 +5,5 @@
 *.exe
 ifft.txt
 fft.txt
+*_.wav
+ToDo.txt
