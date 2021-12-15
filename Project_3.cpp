@@ -54,15 +54,15 @@ public:
     void read_wav(const string &input_string)
     {
 
-        string s;                        // String to store input.
-        string wav_identifier;           // String to store expected WAV identifier.
-        string current;                  // Current input value.
-        int16_t temp;                    // Temporary variable to store input values.
-        uint32_t sampling_rate;          // Sampling rate in WAV file.
-        uint64_t data_section = 0;       // Size of data section in file.
-        uint64_t power = 1;              // Nearest power of 2 to data size.
-        uint64_t data_size = 1;          // Size of data in 2-bytes.
-        uint64_t max_data_size = 262144; // Maximum allowable data size (2^18).
+        string s;                  // String to store input.
+        string wav_identifier;     // String to store expected WAV identifier.
+        string current;            // Current input value.
+        int16_t temp;              // Temporary variable to store input values.
+        uint32_t sampling_rate;    // Sampling rate in WAV file.
+        uint64_t data_section = 0; // Size of data section in file.
+        uint64_t power = 1;        // Nearest power of 2 to data size.
+        uint64_t data_size = 1;    // Size of data in 2-bytes.
+        //uint64_t max_data_size = 262144; // Maximum allowable data size (2^18).
 
         // Open input file.
         ifstream input(input_string, ios::binary);
@@ -104,10 +104,10 @@ public:
         // Calculate size of data in 16 bits.
         data_size = data_section / 2;
 
-        if (data_size > max_data_size)
-        {
-            throw invalid_argument("File size is larger than maximum allowable.");
-        }
+        // if (data_size > max_data_size)
+        // {
+        //     throw invalid_argument("File size is larger than maximum allowable.");
+        // }
 
         // Compute next closest power of two to data size.
         while (power <= data_size)
@@ -418,6 +418,10 @@ public:
         output_wav.close();
         return 0;
     }
+    vector<complex<double>> get_data()
+    {
+        return y;
+    }
 
 private:
     // ============
@@ -428,7 +432,8 @@ private:
      * @brief Inverse Fast Fourier transform values.
      * 
      */
-    vector<complex<double>> y;
+    vector<complex<double>>
+        y;
 };
 
 /**
@@ -496,7 +501,9 @@ int main(int argc, char *argv[])
         try
         {
             vector<complex<double>> input_data;
-            vector<complex<double>> output_data;
+            //vector<complex<double>> output_data;
+            vector<complex<double>> output_data1;
+            vector<complex<double>> output_data2;
             vector<complex<double>> freq_data;
             string arg_two;
 
@@ -505,35 +512,186 @@ int main(int argc, char *argv[])
 
             input_data = input.get_data();
 
-            // Compute FFT on input WAV file.
-            fft dft(input_data);
-            freq_data = dft.get_data();
+            // Window
+            uint64_t window_size = 262144;
+            uint64_t num_windows = input_data.size() / window_size;
+            vector<double> ramp; //linear ramp from 0 to 1 of length of window size
+            ramp.push_back(0);
 
-            arg_two = argv[2];
-            if (arg_two != "low")
+            //create ramp
+            for (uint32_t j = 1; j < (window_size - 1); j++)
             {
-                cout << "Invalid argument for filter. Valid arguments are: \"low\" \n";
-                return -1;
+                ramp.push_back(((double)j) / ((double)window_size - 1));
             }
 
-            frequency input_freq(argv[3]);
-            uint32_t freq = input_freq.get_data();
-            uint32_t sampling_rate = input.get_samp();
+            //end ramp
+            ramp.push_back(1);
 
-            // Compute low pass filter on frequency domain
-            output_data = dft.low_pass(freq_data, freq, sampling_rate);
+            //seems right
+            // for (uint32_t j = 0; j < ramp.size(); j++)
+            // {
+            //     cout << "at " << j << ramp[j] << "\n";
+            // }
 
-            // Compute inverse FFT on input FFT values.
-            i_fft output(output_data);
+            // separate input data into 2^something parts
+            vector<complex<double>> df1_data;
+            vector<complex<double>> df2_data;
+            vector<complex<double>> output;
+
+            for (uint32_t i = 0; i < (num_windows - 1); i++)
+            {
+                //bad to initialize each time?
+                vector<complex<double>> chunk_one(input_data.begin() + (i * window_size), input_data.begin() + ((i * window_size) + window_size));
+                vector<complex<double>> chunk_two(input_data.begin() + ((i * window_size) + window_size), input_data.begin() + ((i * window_size) + (2 * window_size)));
+
+                // vector<complex<double>> chunk_one(input_data.begin(), input_data.begin() + window_size);
+                // vector<complex<double>> chunk_two(input_data.begin(), input_data.begin() + window_size);
+
+                // cout << input_data[0];
+                // cout << chunk_one[0];
+                // cout << chunk_two[0];
+
+                // cout << input_data[389];
+                // cout << chunk_one[389];
+                // cout << chunk_two[389];
+                // //transform data by linear ramp
+                // cout << chunk_one.size();
+                // cout << chunk_two.size();
+
+                //multiply chunk one by ramp
+                //chunk two = chunk two - (ramp*chunk_two)
+                for (uint32_t k = 0; k < chunk_one.size(); k++)
+                {
+                    // cout << ramp[k] << "\n";
+                    // cout << chunk_one[k] << "\n";
+                    // cout << chunk_two[k] << "\n";
+                    chunk_one[k] = chunk_one[k] * ramp[k];
+                    chunk_two[k] = chunk_two[k] - (chunk_two[k] * ramp[k]);
+                    // cout << chunk_one[k] << "\n";
+                    // cout << chunk_two[k] << "\n";
+                }
+                // cout << input_data[262143] << "\n";
+                // cout << chunk_one[262143] << "\n";
+                // cout << chunk_two[262143] << "\n";
+
+                // cout << chunk_one.size() << "\n";
+                // cout << chunk_two.size() << "\n";
+                //do the fft on each part
+                fft df1(chunk_one);
+                fft df2(chunk_two);
+
+                //do the ifft on each part
+                df1_data = df1.get_data();
+                df2_data = df2.get_data();
+
+                // frequency input_freq(argv[3]);
+                // uint32_t freq = input_freq.get_data();
+                // uint32_t sampling_rate = input.get_samp();
+
+                // output_data1 = df1.low_pass(df1_data, freq, sampling_rate);
+                // output_data2 = df2.low_pass(df2_data, freq, sampling_rate);
+
+                i_fft if1(df1_data);
+                i_fft if2(df1_data);
+
+                vector<complex<double>> dat1 = if1.get_data();
+                vector<complex<double>> dat2 = if2.get_data();
+
+                //output.insert(output.begin(), chunk_one.size(), 0);
+
+                cout << output.size() << "\n";
+
+                // for (uint32_t k = 0; k < chunk_one.size(); k++)
+                // {
+                //     output[k] = dat1[k] + dat2[k];
+                // }
+                // cout << output.size() << "\n";
+
+                //add ifft in specific way
+
+                if (i == 0)
+                {
+                    output.insert(output.begin(), input_data.size(), 0);
+                }
+                cout << "output size" << output.size();
+
+                for (uint32_t k = 0; k < chunk_one.size(); k++)
+                {
+                    //starting position
+                    output[(i * window_size) + k] = output[(i * window_size) + k] + dat1[k];
+                }
+                for (uint32_t k = 0; k < chunk_two.size(); k++)
+                {
+                    //starting position
+                    output[(i * window_size) + window_size + k] = output[(i * window_size) + window_size + k] + dat2[k];
+                }
+
+                cout << "loop done \n";
+            }
+
+            // // Compute FFT on input WAV file.
+            // fft dft(input_data);
+            // freq_data = dft.get_data();
+
+            // arg_two = argv[2];
+            // if (arg_two != "low")
+            // {
+            //     cout << "Invalid argument for filter. Valid arguments are: \"low\" \n";
+            //     return -1;
+            // }
+
+            // frequency input_freq(argv[3]);
+            // uint32_t freq = input_freq.get_data();
+            // uint32_t sampling_rate = input.get_samp();
+
+            // // Compute low pass filter on frequency domain
+            // output_data = dft.low_pass(freq_data, freq, sampling_rate);
+
+            // // Compute inverse FFT on input FFT values.
+            // i_fft output(output_data);
 
             // Write inverse FFT values to output WAV file.
             string input_header = input.get_header();
-            int16_t write_status = output.write_wav(input_header);
+            //int16_t write_status = output.write_wav(input_header);
 
-            if (write_status < 0)
+            // if (write_status < 0)
+            // {
+            //     return -1;
+            // }
+
+            //////////////////TEMP FILE WRITING////////////////////////////////////
+            stringstream ss_wav;
+
+            // Create output file name.
+            chrono::system_clock now;
+            time_t output_time = chrono::system_clock::to_time_t(now.now());
+            ss_wav << put_time(localtime(&output_time), "%y%m%d_%H%M%S_.wav");
+
+            // Create output WAV file.
+            ofstream output_wav(ss_wav.str(), ios::binary);
+
+            if (!output_wav.is_open())
             {
+                cout << "Error opening output file!";
                 return -1;
             }
+
+            // Write WAV file header.
+            for (uint64_t i = 0; i < input_header.size(); i++)
+            {
+                output_wav.write(&input_header[i], sizeof(int8_t));
+            }
+
+            // Write WAV data with real part of inverse FFT values.
+            for (uint64_t j = 0; j < output.size(); j++)
+            {
+                double real_part = real(output[j]);
+                int16_t round_real = (int16_t)round(real_part);
+                output_wav.write((char *)&round_real, sizeof(int16_t));
+            }
+
+            output_wav.close();
+            //////////////////////////////////////////////////////////////////
         }
 
         catch (const invalid_argument &e)
