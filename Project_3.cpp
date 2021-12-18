@@ -677,6 +677,155 @@ private:
     vector<frequency> bands;
 };
 
+class process_audio
+{
+public:
+    process_audio(wav_file &input)
+    {
+        vector<complex<double>> input_data;
+        vector<double> ramp; //linear ramp from 0 to 1 of length of window size
+        vector<complex<double>> fft_data;
+        vector<complex<double>> ifft_data;
+        vector<complex<double>> freq_data;
+        vector<complex<double>> transformed_data;
+
+        input_data = input.get_data();
+
+        // Window
+        //uint64_t window_size = 1024;
+        //uint64_t window_size = 2097152;
+        uint64_t window_size = 262144;
+        uint64_t num_windows = input_data.size() / window_size;
+        cout << input_data.size() << "\n";
+        cout << num_windows << "\n";
+
+        ramp.push_back(0);
+
+        //create ramp
+        for (uint32_t j = 1; j < (window_size - 1); j++)
+        {
+            ramp.push_back(((double)j) / ((double)window_size - 1));
+        }
+
+        //end ramp
+        ramp.push_back(1);
+
+        for (uint32_t i = 0; i < (num_windows - 1); i++)
+        {
+            //bad to initialize each time?
+            vector<complex<double>> chunk_one(input_data.begin() + (i * window_size), input_data.begin() + ((i * window_size) + window_size));
+            vector<complex<double>> chunk_two(input_data.begin() + ((i * window_size) + window_size), input_data.begin() + ((i * window_size) + (2 * window_size)));
+            // for (uint32_t k = 0; k < chunk_one.size(); k++)
+            // {
+            //     cout << "chunk one" << chunk_one[k] << "\n";
+            // }
+            // for (uint32_t k = 0; k < chunk_two.size(); k++)
+            // {
+            //     cout << "chunk two" << chunk_two[k] << "\n";
+            // }
+
+            //transform data by linear ramp
+            //multiply chunk one by ramp
+            //chunk two = chunk two - (ramp*chunk_two)
+            ///////////////////////////////////////////////////////
+            for (uint32_t k = 0; k < chunk_one.size(); k++)
+            {
+
+                chunk_one[k] = chunk_one[k] * ramp[k];
+                chunk_two[k] = chunk_two[k] - (chunk_two[k] * ramp[k]);
+            }
+
+            /////////////////////////////////////////////////////////////
+
+            //fft big chunk
+            //make chucnk one big vector
+            chunk_one.insert(chunk_one.end(), chunk_two.begin(), chunk_two.end());
+            fft fft_chunk_one(chunk_one);
+
+            //do the ifft on each part
+            fft_data = fft_chunk_one.get_data();
+
+            //frequency input_freq(argv[3]);
+            // uint32_t freq = input_freq.get_data();
+            uint32_t sampling_rate = input.get_samp();
+
+            //output_data1 = df1.low_pass(df1_data, freq, sampling_rate);
+            // // output_data2 = df2.low_pass(df2_data, freq, sampling_rate);
+            ////////////////////////////////////////////////////////////
+            //low pass filter
+            //uint32_t index = fft_chunk_one.get_index(input_freq, sampling_rate);
+            uint32_t index = 4800;
+            //100 cut out noises for low pass
+            //110 let noises for high pass, 150000 cuts it out, 50000 small noises, 30000 somewhat recognizable,
+            //10000 sounds about right, 5000 better
+            filter fil(index, fft_data);
+            transformed_data = fil.low_pass();
+            //transformed_data = fil.high_pass();
+            ///////////////////////////////////////////////////////
+
+            ////////////////////////////////////////////////////////
+            //testing
+            //i_fft if1(output_data1);
+            i_fft ifft_chunk_one(transformed_data);
+
+            //testing
+
+            ifft_data = ifft_chunk_one.get_data();
+
+            ///////////////////////////////////////////////////////////////
+
+            //output.insert(output.begin(), chunk_one.size(), 0);
+
+            //cout << output.size() << "\n";
+
+            // for (uint32_t k = 0; k < chunk_one.size(); k++)
+            // {
+            //     output[k] = dat1[k] + dat2[k];
+            // }
+            // cout << output.size() << "\n";
+
+            //add ifft in specific way
+            // ///////////////////////////////////////////////////////////////
+            if (i == 0)
+            {
+                output_data.insert(output_data.begin(), input_data.size(), 0);
+            }
+
+            /////////////////
+            // for (uint32_t k = 0; k < chunk_one.size(); k++)
+            // {
+            //     //starting position
+            //     output[(i * window_size) + k] = output[(i * window_size) + k] + dat1[k];
+            // }
+            // for (uint32_t k = 0; k < chunk_two.size(); k++)
+            // {
+            //     //starting position
+            //     output[(i * window_size) + window_size + k] = output[(i * window_size) + window_size + k] + dat2[k];
+            // }
+            // ///////////////////////////////////////////////////////////////
+
+            for (uint32_t k = 0; k < ifft_data.size(); k++)
+            {
+                //starting position
+
+                output_data[(i * window_size) + k] = output_data[(i * window_size) + k] + ifft_data[k];
+                //cout << "output" << output[(i * window_size) + k] << "\n";
+            }
+
+            cout << "loop end \n";
+        }
+    }
+
+    //member functions
+
+    vector<complex<double>> get_data()
+    {
+        return output_data;
+    }
+
+private:
+    vector<complex<double>> output_data;
+};
 int main(int argc, char *argv[])
 {
     if (argc == 4)
@@ -685,10 +834,10 @@ int main(int argc, char *argv[])
         {
             vector<complex<double>> input_data;
             vector<complex<double>> output_data;
-            vector<complex<double>> fft_data;
-            vector<complex<double>> ifft_data;
-            vector<complex<double>> freq_data;
-            vector<complex<double>> transformed_data;
+            //vector<complex<double>> fft_data;
+            // vector<complex<double>> ifft_data;
+            //vector<complex<double>> freq_data;
+            //vector<complex<double>> transformed_data;
             string arg_two;
 
             uint16_t channel;
@@ -698,28 +847,36 @@ int main(int argc, char *argv[])
 
             //Get number of channels.
             channel = input.get_channel();
-
-            input_data = input.get_data();
-
-            // Window
-            //uint64_t window_size = 1024;
-            //uint64_t window_size = 2097152;
-            uint64_t window_size = 262144;
-            uint64_t num_windows = input_data.size() / window_size;
-            cout << input_data.size() << "\n";
-            cout << num_windows << "\n";
-
-            vector<double> ramp; //linear ramp from 0 to 1 of length of window size
-            ramp.push_back(0);
-
-            //create ramp
-            for (uint32_t j = 1; j < (window_size - 1); j++)
+            if (channel == 2)
             {
-                ramp.push_back(((double)j) / ((double)window_size - 1));
+                //do i make below a class and function of its own
             }
 
-            //end ramp
-            ramp.push_back(1);
+            process_audio process(input);
+
+            output_data = process.get_data();
+
+            // input_data = input.get_data();
+
+            // // Window
+            // //uint64_t window_size = 1024;
+            // //uint64_t window_size = 2097152;
+            // uint64_t window_size = 262144;
+            // uint64_t num_windows = input_data.size() / window_size;
+            // cout << input_data.size() << "\n";
+            // cout << num_windows << "\n";
+
+            // vector<double> ramp; //linear ramp from 0 to 1 of length of window size
+            // ramp.push_back(0);
+
+            // //create ramp
+            // for (uint32_t j = 1; j < (window_size - 1); j++)
+            // {
+            //     ramp.push_back(((double)j) / ((double)window_size - 1));
+            // }
+
+            // //end ramp
+            // ramp.push_back(1);
 
             //seems right
             // for (uint32_t j = 0; j < ramp.size(); j++)
@@ -729,115 +886,110 @@ int main(int argc, char *argv[])
 
             // separate input data into 2^something parts
 
-            if (channel == 2)
-            {
-                //do i make below a class and function of its own
-            }
+            // for (uint32_t i = 0; i < (num_windows - 1); i++)
+            // {
+            //     //bad to initialize each time?
+            //     vector<complex<double>> chunk_one(input_data.begin() + (i * window_size), input_data.begin() + ((i * window_size) + window_size));
+            //     vector<complex<double>> chunk_two(input_data.begin() + ((i * window_size) + window_size), input_data.begin() + ((i * window_size) + (2 * window_size)));
+            //     // for (uint32_t k = 0; k < chunk_one.size(); k++)
+            //     // {
+            //     //     cout << "chunk one" << chunk_one[k] << "\n";
+            //     // }
+            //     // for (uint32_t k = 0; k < chunk_two.size(); k++)
+            //     // {
+            //     //     cout << "chunk two" << chunk_two[k] << "\n";
+            //     // }
 
-            for (uint32_t i = 0; i < (num_windows - 1); i++)
-            {
-                //bad to initialize each time?
-                vector<complex<double>> chunk_one(input_data.begin() + (i * window_size), input_data.begin() + ((i * window_size) + window_size));
-                vector<complex<double>> chunk_two(input_data.begin() + ((i * window_size) + window_size), input_data.begin() + ((i * window_size) + (2 * window_size)));
-                // for (uint32_t k = 0; k < chunk_one.size(); k++)
-                // {
-                //     cout << "chunk one" << chunk_one[k] << "\n";
-                // }
-                // for (uint32_t k = 0; k < chunk_two.size(); k++)
-                // {
-                //     cout << "chunk two" << chunk_two[k] << "\n";
-                // }
+            //     //transform data by linear ramp
+            //     //multiply chunk one by ramp
+            //     //chunk two = chunk two - (ramp*chunk_two)
+            //     ///////////////////////////////////////////////////////
+            //     for (uint32_t k = 0; k < chunk_one.size(); k++)
+            //     {
 
-                //transform data by linear ramp
-                //multiply chunk one by ramp
-                //chunk two = chunk two - (ramp*chunk_two)
-                ///////////////////////////////////////////////////////
-                for (uint32_t k = 0; k < chunk_one.size(); k++)
-                {
+            //         chunk_one[k] = chunk_one[k] * ramp[k];
+            //         chunk_two[k] = chunk_two[k] - (chunk_two[k] * ramp[k]);
+            //     }
 
-                    chunk_one[k] = chunk_one[k] * ramp[k];
-                    chunk_two[k] = chunk_two[k] - (chunk_two[k] * ramp[k]);
-                }
+            //     /////////////////////////////////////////////////////////////
 
-                /////////////////////////////////////////////////////////////
+            //     //fft big chunk
+            //     //make chucnk one big vector
+            //     chunk_one.insert(chunk_one.end(), chunk_two.begin(), chunk_two.end());
+            //     fft fft_chunk_one(chunk_one);
 
-                //fft big chunk
-                //make chucnk one big vector
-                chunk_one.insert(chunk_one.end(), chunk_two.begin(), chunk_two.end());
-                fft fft_chunk_one(chunk_one);
+            //     //do the ifft on each part
+            //     fft_data = fft_chunk_one.get_data();
 
-                //do the ifft on each part
-                fft_data = fft_chunk_one.get_data();
+            //     frequency input_freq(argv[3]);
+            //     // uint32_t freq = input_freq.get_data();
+            //     uint32_t sampling_rate = input.get_samp();
 
-                frequency input_freq(argv[3]);
-                // uint32_t freq = input_freq.get_data();
-                uint32_t sampling_rate = input.get_samp();
+            //     //output_data1 = df1.low_pass(df1_data, freq, sampling_rate);
+            //     // // output_data2 = df2.low_pass(df2_data, freq, sampling_rate);
+            //     ////////////////////////////////////////////////////////////
+            //     //low pass filter
+            //     //uint32_t index = fft_chunk_one.get_index(input_freq, sampling_rate);
+            //     uint32_t index = 4800;
+            //     //100 cut out noises for low pass
+            //     //110 let noises for high pass, 150000 cuts it out, 50000 small noises, 30000 somewhat recognizable,
+            //     //10000 sounds about right, 5000 better
+            //     filter fil(index, fft_data);
+            //     transformed_data = fil.low_pass();
+            //     //transformed_data = fil.high_pass();
+            //     ///////////////////////////////////////////////////////
 
-                //output_data1 = df1.low_pass(df1_data, freq, sampling_rate);
-                // // output_data2 = df2.low_pass(df2_data, freq, sampling_rate);
-                ////////////////////////////////////////////////////////////
-                //low pass filter
-                //uint32_t index = fft_chunk_one.get_index(input_freq, sampling_rate);
-                uint32_t index = 4800;
-                //100 cut out noises for low pass
-                //110 let noises for high pass, 150000 cuts it out, 50000 small noises, 30000 somewhat recognizable,
-                //10000 sounds about right, 5000 better
-                filter fil(index, fft_data);
-                transformed_data = fil.low_pass();
-                //transformed_data = fil.high_pass();
-                ///////////////////////////////////////////////////////
+            //     ////////////////////////////////////////////////////////
+            //     //testing
+            //     //i_fft if1(output_data1);
+            //     i_fft ifft_chunk_one(transformed_data);
 
-                ////////////////////////////////////////////////////////
-                //testing
-                //i_fft if1(output_data1);
-                i_fft ifft_chunk_one(transformed_data);
+            //     //testing
 
-                //testing
+            //     ifft_data = ifft_chunk_one.get_data();
 
-                ifft_data = ifft_chunk_one.get_data();
+            //     ///////////////////////////////////////////////////////////////
 
-                ///////////////////////////////////////////////////////////////
+            //     //output.insert(output.begin(), chunk_one.size(), 0);
 
-                //output.insert(output.begin(), chunk_one.size(), 0);
+            //     //cout << output.size() << "\n";
 
-                //cout << output.size() << "\n";
+            //     // for (uint32_t k = 0; k < chunk_one.size(); k++)
+            //     // {
+            //     //     output[k] = dat1[k] + dat2[k];
+            //     // }
+            //     // cout << output.size() << "\n";
 
-                // for (uint32_t k = 0; k < chunk_one.size(); k++)
-                // {
-                //     output[k] = dat1[k] + dat2[k];
-                // }
-                // cout << output.size() << "\n";
+            //     //add ifft in specific way
+            //     // ///////////////////////////////////////////////////////////////
+            //     if (i == 0)
+            //     {
+            //         output_data.insert(output_data.begin(), input_data.size(), 0);
+            //     }
 
-                //add ifft in specific way
-                // ///////////////////////////////////////////////////////////////
-                if (i == 0)
-                {
-                    output_data.insert(output_data.begin(), input_data.size(), 0);
-                }
+            //     /////////////////
+            //     // for (uint32_t k = 0; k < chunk_one.size(); k++)
+            //     // {
+            //     //     //starting position
+            //     //     output[(i * window_size) + k] = output[(i * window_size) + k] + dat1[k];
+            //     // }
+            //     // for (uint32_t k = 0; k < chunk_two.size(); k++)
+            //     // {
+            //     //     //starting position
+            //     //     output[(i * window_size) + window_size + k] = output[(i * window_size) + window_size + k] + dat2[k];
+            //     // }
+            //     // ///////////////////////////////////////////////////////////////
 
-                /////////////////
-                // for (uint32_t k = 0; k < chunk_one.size(); k++)
-                // {
-                //     //starting position
-                //     output[(i * window_size) + k] = output[(i * window_size) + k] + dat1[k];
-                // }
-                // for (uint32_t k = 0; k < chunk_two.size(); k++)
-                // {
-                //     //starting position
-                //     output[(i * window_size) + window_size + k] = output[(i * window_size) + window_size + k] + dat2[k];
-                // }
-                // ///////////////////////////////////////////////////////////////
+            //     for (uint32_t k = 0; k < ifft_data.size(); k++)
+            //     {
+            //         //starting position
 
-                for (uint32_t k = 0; k < ifft_data.size(); k++)
-                {
-                    //starting position
+            //         output_data[(i * window_size) + k] = output_data[(i * window_size) + k] + ifft_data[k];
+            //         //cout << "output" << output[(i * window_size) + k] << "\n";
+            //     }
 
-                    output_data[(i * window_size) + k] = output_data[(i * window_size) + k] + ifft_data[k];
-                    //cout << "output" << output[(i * window_size) + k] << "\n";
-                }
-
-                cout << "loop end \n";
-            }
+            //     cout << "loop end \n";
+            // }
 
             // for (uint32_t k = 0; k < output.size(); k++)
             // {
