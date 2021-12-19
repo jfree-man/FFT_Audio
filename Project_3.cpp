@@ -16,9 +16,7 @@
 #include <sstream>
 #include <cmath>
 #include <complex>
-#include <chrono>
-#include <ctime>
-#include <iomanip>
+#include <algorithm>
 using namespace std;
 
 /**
@@ -69,10 +67,12 @@ public:
     void read_wav(const string &input_string)
     {
 
-        string s;                  // String to store input.
-        string wav_identifier;     // String to store expected WAV identifier.
+        string s;              // String to store input.
+        string wav_identifier; // String to store expected WAV identifier.
+        string format_size;
         string current;            // Current input value.
         int16_t temp;              // Temporary variable to store input values.
+        int16_t bits_persamp;      // String to store bits per sample.
         uint64_t data_section = 0; // Size of data section in file.
         uint64_t power = 1;        // Nearest power of 2 to data size.
         uint64_t data_size = 1;    // Size of data in 2-bytes.
@@ -101,17 +101,30 @@ public:
             throw invalid_argument("Not a .WAV file.");
         }
 
+        input.seekg(16);
+
+        for (uint32_t i = 0; i < 4; i++)
+        {
+            current = (char)input.get();
+            format_size.insert(i, current);
+        }
+
         // Read in WAV header (44 bytes).
         input.seekg(0);
 
-        for (uint32_t k = 0; k < 44; k++)
+        for (uint32_t k = 0; k < (20 + *(uint32_t *)&format_size[0] + 8); k++)
         {
             current = (char)input.get();
             header.insert(k, current);
         }
 
+        bits_persamp = *(int16_t *)&header[34];
+        if (bits_persamp != 16)
+        {
+            throw invalid_argument("Not a 16-bit .WAV file.");
+        }
         // Get data section size.
-        data_section = *(int32_t *)&header[40];
+        data_section = *(int32_t *)&header[20 + *(uint32_t *)&format_size[0] + 4];
 
         // Ensure data section is a multiple of 2.
         if (data_section % 2 != 0)
@@ -235,6 +248,37 @@ public:
     uint16_t get_channel()
     {
         return channel;
+    }
+
+    uint32_t orig_size()
+    {
+        uint32_t format_size = *(uint32_t *)&header[16];
+        uint32_t data_section = *(int32_t *)&header[20 + format_size + 4];
+        return data_section;
+    }
+
+    void update_size(uint32_t s)
+    {
+        uint32_t format_size = *(uint32_t *)&header[16];
+
+        header[20 + format_size + 4] = (unsigned char)s;
+        header[20 + format_size + 5] = (unsigned char)(s >> 8);
+        header[20 + format_size + 6] = (unsigned char)(s >> 16);
+        header[20 + format_size + 7] = (unsigned char)(s >> 24);
+
+        uint32_t file_size = (header.size() - 8) + s;
+
+        header[4] = (unsigned char)file_size;
+        header[5] = (unsigned char)(file_size >> 8);
+        header[6] = (unsigned char)(file_size >> 16);
+        header[7] = (unsigned char)(file_size >> 24);
+    }
+    void update_fsamp(uint32_t f)
+    {
+        header[24] = (unsigned char)f;
+        header[25] = (unsigned char)(f >> 8);
+        header[26] = (unsigned char)(f >> 16);
+        header[27] = (unsigned char)(f >> 24);
     }
 
 private:
@@ -741,6 +785,123 @@ public:
         process(input, type, f1, f2, e);
     }
 
+    process_audio(wav_file &input_one, wav_file &input_two, string &type)
+    {
+        if (input_one.get_channel() != input_two.get_channel())
+        {
+            throw invalid_argument("Input files have different number of channels. Cannot mix files.\n");
+        }
+
+        if (input_one.get_samp() != input_two.get_samp())
+        {
+            cout << "Input files have different sampling rates. Using larger sampling rate. \n";
+
+            if (input_two.get_samp() > input_one.get_samp())
+            {
+                uint32_t f = input_two.get_samp();
+                input_one.update_fsamp(f);
+            }
+        }
+
+        if (type == "add")
+        {
+            add(input_one, input_two);
+        }
+
+        if (type == "overlap")
+        {
+            overlap(input_one, input_two);
+        }
+    }
+
+    void add(wav_file &input_one, wav_file &input_two)
+    {
+        vector<complex<double>> data_one;
+        vector<complex<double>> data_two;
+
+        data_one = input_one.get_data();
+        data_two = input_two.get_data();
+
+        uint32_t s = input_one.orig_size() + input_two.orig_size();
+        uint32_t input_one_bitsize = input_one.orig_size() / 2;
+        uint32_t input_two_bitsize = input_two.orig_size() / 2;
+
+        input_one.update_size(s);
+
+        output_data = data_one;
+
+        //concatenate files
+        output_data.insert(output_data.begin() + input_one_bitsize, data_two.begin(), data_two.begin() + input_two_bitsize);
+
+        //update header with sampling rate
+    }
+
+    void overlap(wav_file &input_one, wav_file &input_two)
+    {
+        vector<complex<double>> data_one;
+        vector<complex<double>> data_two;
+        uint32_t m; //max size
+        uint32_t maximum_flag = 0;
+        complex<double> max_value = 0;
+
+        data_one = input_one.get_data();
+        data_two = input_two.get_data();
+
+        uint32_t input_one_bitsize = input_one.orig_size() / 2;
+        uint32_t input_two_bitsize = input_two.orig_size() / 2;
+
+        if (input_one_bitsize > input_two_bitsize)
+        {
+            for (uint32_t i = 0; i < input_one_bitsize; i++)
+            {
+                if (i < input_two_bitsize)
+                {
+                    output_data.push_back(data_one[i] + data_two[i]);
+                }
+                else
+                {
+                    output_data.push_back(data_one[i]);
+                }
+
+                if (real(output_data[i]) > real(max_value))
+                {
+                    max_value = output_data[i];
+                }
+            }
+        }
+        else
+        {
+            //input two is larger
+            m = input_two.orig_size();
+            input_one.update_size(m);
+            for (uint32_t i = 0; i < input_two_bitsize; i++)
+            {
+                if (i < input_one_bitsize)
+                {
+                    output_data.push_back(data_one[i] + data_two[i]);
+                }
+                else
+                {
+                    output_data.push_back(data_two[i]);
+                }
+
+                if (real(output_data[i]) > real(max_value))
+                {
+                    max_value = output_data[i];
+                }
+            }
+        }
+
+        if (real(max_value) > 32768)
+        {
+            double scale = real(max_value) / 32768;
+            for (uint32_t i = 0; i < output_data.size(); i++)
+            {
+                output_data[i] = round(real(output_data[i]) / scale) + 0i;
+            }
+        }
+    }
+
     void process(wav_file &input, string &type, frequency &f1, frequency &f2, equalize &e)
     {
         cout << "Processing WAV file...\n";
@@ -1046,6 +1207,7 @@ int main(int argc, char *argv[])
             {
                 throw invalid_argument("Output file name is missing \".wav\" extension.");
             }
+
             // Read and validate WAV file.
             wav_file input(argv[1]);
             arg_three = argv[3];
@@ -1054,16 +1216,22 @@ int main(int argc, char *argv[])
             {
             case 5:
 
-                if (arg_three != "low" && arg_three != "high")
+                if (arg_three != "low" && arg_three != "high" && arg_three != "add" && arg_three != "overlap")
                 {
-                    throw invalid_argument("Provided 4 arguments to program. Third argument is not \"low\" or \"high\". \n");
+                    throw invalid_argument("Provided 4 arguments to program. Third argument is not \"low\" or \"high\" or \"add\". \n");
                 }
-                else
+                else if (arg_three == "low" || arg_three == "high")
                 {
                     frequency input_freq(argv[4]);
                     equalize buffer;
                     process_audio processor(input, arg_three, input_freq, input_freq, buffer);
                     output_data = processor.get_data();
+                }
+                else
+                {
+                    wav_file input_two(argv[4]);
+                    process_audio mixer(input, input_two, arg_three);
+                    output_data = mixer.get_data();
                 }
                 break;
 
@@ -1108,9 +1276,10 @@ int main(int argc, char *argv[])
             }
 
             //////////////////FILE WRITING////////////////////////////////////
+            // cout << "output data " << output_data.size();
             wav_file output(input, output_data);
             output.write_wav(arg_two);
-            cout << "end\n";
+            //cout << "end\n";
             //////////////////////////////////////////////////////////////////
         }
 
