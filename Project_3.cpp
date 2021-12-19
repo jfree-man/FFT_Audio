@@ -159,17 +159,17 @@ public:
      * 
      * @param header WAV file header.
      */
-    void write_wav()
+    void write_wav(string &outfile)
     {
         stringstream ss_wav;
 
         // Create output file name.
-        chrono::system_clock now;
-        time_t output_time = chrono::system_clock::to_time_t(now.now());
-        ss_wav << put_time(localtime(&output_time), "%y%m%d_%H%M%S_.wav");
+        // chrono::system_clock now;
+        // time_t output_time = chrono::system_clock::to_time_t(now.now());
+        // ss_wav << put_time(localtime(&output_time), "%y%m%d_%H%M%S_.wav");
 
         // Create output WAV file.
-        ofstream output_wav(ss_wav.str(), ios::binary);
+        ofstream output_wav(outfile, ios::binary);
 
         if (!output_wav.is_open())
         {
@@ -283,12 +283,23 @@ public:
         uint32_t input_freq = 0;
 
         // Verify input is an integer.
-        input_freq = stol(num);
+        try
+        {
+            input_freq = stol(num);
+        }
+        catch (const invalid_argument &e)
+        {
+            throw invalid_argument("Invalid frequency argument. Expected a number.");
+        }
+        catch (const invalid_argument &e)
+        {
+            throw out_of_range("Frequency input is out of range for 'std::stol'.");
+        }
 
         // Verify frequency is in audible range.
         if (input_freq < 20 || input_freq > 20000)
         {
-            throw out_of_range("Frequency outside audible range (20 Hz, 20000 Hz) \n");
+            throw out_of_range("Frequency outside audible range (20 Hz, 20000 Hz). \n");
         }
 
         f = input_freq;
@@ -421,11 +432,11 @@ public:
     //should sampling frequency be passed somehow
     uint32_t get_index(frequency &f, uint32_t f_samp)
     {
-        uint32_t N = x.size();
+        uint64_t N = x.size();
         uint32_t freq = f.get_frequency();
 
         //double i = round((double)freq / ((double)f_samp / (double)N));
-        double i = round((double)freq / ((double)f_samp / (double)N));
+        double i = round((double)freq * (double)N) / ((double)f_samp);
         uint32_t index = (uint32_t)i;
         return index;
     }
@@ -525,7 +536,20 @@ public:
         {
             throw out_of_range("Filter index value is larger than FFT vector");
         }
-        threshold = index;
+        threshold_one = index;
+        bins = fft_values;
+        n = (uint32_t)fft_values.size();
+    }
+    //constructor
+    filter(uint32_t &index_one, uint32_t &index_two, vector<complex<double>> &fft_values)
+    {
+        //should index, be fft_values.size()/2
+        if ((index_one > fft_values.size()) && (index_two > fft_values.size()))
+        {
+            throw out_of_range("Filter index value is larger than FFT vector");
+        }
+        threshold_one = index_one;
+        threshold_two = index_two;
         bins = fft_values;
         n = (uint32_t)fft_values.size();
     }
@@ -541,7 +565,7 @@ public:
     vector<complex<double>> low_pass()
     {
         // Remove frequency domain outside of threshold
-        for (uint32_t i = threshold; i < (n - threshold); i++)
+        for (uint32_t i = threshold_one; i < (n - threshold_one); i++)
         {
             bins[i] = 0;
         }
@@ -550,11 +574,11 @@ public:
     vector<complex<double>> high_pass()
     {
         // Remove frequency domain outside of threshold
-        for (uint32_t i = 0; i < threshold; i++)
+        for (uint32_t i = 0; i < threshold_one; i++)
         {
             bins[i] = 0;
         }
-        for (uint32_t i = (n - threshold); i < n; i++)
+        for (uint32_t i = (n - threshold_one); i < n; i++)
         {
             bins[i] = 0;
         }
@@ -568,10 +592,28 @@ public:
 
     //bandpass
 
-    //notch
+    vector<complex<double>> band_pass()
+    {
+        for (uint32_t i = 0; i < threshold_one; i++)
+        {
+            bins[i] = 0;
+        }
+        for (uint32_t i = threshold_two; i < (n / 2 + threshold_two); i++)
+        {
+            bins[i] = 0;
+        }
+
+        for (uint32_t i = (n - threshold_one); i < n; i++)
+        {
+            bins[i] = 0;
+        }
+
+        return bins;
+    }
 
 private:
-    uint32_t threshold;
+    uint32_t threshold_one;
+    uint32_t threshold_two;
     vector<complex<double>> bins;
     uint32_t n;
 };
@@ -580,25 +622,81 @@ class equalize
 
 public:
     //constructor
-    equalize(string &one, string &two, string &three, string &four, string &five, string &six, string &seven, string &eight, string &nine, string &ten)
+    equalize()
+    {
+        modify.assign({0, 0, 0, 0, 0, 0, 0, 0, 0, 0});
+        bands = get_bands();
+    }
+    equalize(char *one, char *two, char *three, char *four, char *five, char *six, char *seven, char *eight, char *nine, char *ten)
     {
         //input decibels
         vector<string> input_vec = {one, two, three, four, five, six, seven, eight, nine, ten};
-        uint32_t input_dec;
+        int32_t input_dec;
         for (uint32_t i = 0; i < input_vec.size(); i++)
         {
             //verify input is an integer
-            input_dec = stol(input_vec[i]);
+            try
+            {
+                input_dec = stol(input_vec[i]);
+            }
+            catch (const invalid_argument &e)
+            {
+                throw invalid_argument("Invalid equalizing scale argument. Expected a number. \n");
+            }
+            catch (const invalid_argument &e)
+            {
+                throw out_of_range("Equalizing scaler is out of range for 'std::stol'. \n");
+            }
 
             //verify input is in decibel range (-12-12)?
-            if (input_dec < -12 || input_dec > 12)
+            if (input_dec < -24 || input_dec > 24)
             {
-                throw out_of_range("Decibel input is outside valid range. \n");
+                throw out_of_range("Equalizing scale input is outside valid range. \n");
             }
 
             modify.push_back(input_dec);
         }
 
+        bands = get_bands();
+    }
+
+    //flat band
+    vector<complex<double>> flat_band(fft &fft, uint32_t &fs)
+    {
+
+        //need freq indices
+        //uint32_t lower_index;
+        //uint32_t upper_index;
+        vector<complex<double>> fft_data;
+        vector<uint32_t> indices;
+        double m;
+        double gain;
+
+        fft_data = fft.get_data();
+
+        //get indices first
+        for (uint32_t i = 0; i < bands.size(); i++)
+        {
+            indices.push_back(fft.get_index(bands[i], fs));
+        }
+
+        //for each band
+        //if not 0
+        for (uint32_t i = 0; i < (bands.size() - 1); i++)
+        {
+            gain = pow(10.0, ((double)modify[i] / 20.0));
+
+            for (uint32_t k = indices[i]; k < indices[i + 1]; k++)
+            {
+                fft_data[k] = fft_data[k] * gain;
+            }
+        }
+
+        return fft_data;
+    }
+
+    vector<frequency> get_bands()
+    {
         uint32_t n1 = 23;
         uint32_t n2 = 45;
         uint32_t n3 = 89;
@@ -623,51 +721,9 @@ public:
         frequency f10(n10);
         frequency f11(n11);
 
-        bands[0] = f1;
-        bands[1] = f2;
-        bands[2] = f3;
-        bands[3] = f4;
-        bands[4] = f5;
-        bands[5] = f6;
-        bands[6] = f7;
-        bands[7] = f8;
-        bands[8] = f9;
-        bands[9] = f10;
-        bands[10] = f11;
-    }
+        bands.assign({f1, f2, f3, f4, f5, f6, f7, f8, f9, f10, f11});
 
-    //flat band
-    void flat_band(fft &fft, wav_file &wav)
-    {
-        //get sampling rate
-        uint32_t fs = wav.get_samp();
-
-        //need freq indices
-        uint32_t lower_index;
-        uint32_t upper_index;
-        vector<complex<double>> fft_data;
-        vector<uint32_t> indices;
-
-        fft_data = fft.get_data();
-
-        //get indices first
-        for (uint32_t i = 0; i < (bands.size() - 1); i++)
-        {
-            indices.push_back(fft.get_index(bands[i], fs));
-        }
-
-        //for each band
-        //if not 0
-        for (uint32_t i = 0; i < (bands.size() - 1); i++)
-        {
-            if (modify[i] != 0)
-            {
-                for (uint32_t k = indices[i]; k < indices[i + 1]; k++)
-                {
-                    fft_data[k] = fft_data[k] * (double)modify[i];
-                }
-            }
-        }
+        return bands;
     }
 
     //peak band
@@ -680,24 +736,143 @@ private:
 class process_audio
 {
 public:
-    process_audio(wav_file &input)
+    process_audio(wav_file &input, string &type, frequency &f1, frequency &f2, equalize &e)
     {
+        process(input, type, f1, f2, e);
+    }
+
+    void process(wav_file &input, string &type, frequency &f1, frequency &f2, equalize &e)
+    {
+        cout << "Processing WAV file...\n";
         vector<complex<double>> input_data;
-        vector<double> ramp; //linear ramp from 0 to 1 of length of window size
+
         vector<complex<double>> fft_data;
         vector<complex<double>> ifft_data;
         vector<complex<double>> freq_data;
         vector<complex<double>> transformed_data;
+        uint32_t sampling_rate;
 
         input_data = input.get_data();
+        uint64_t input_size = input_data.size();
 
+        uint16_t channel = input.get_channel();
+
+        sampling_rate = input.get_samp();
+
+        if (channel == 1) //mono
+        {
+            if (input_size <= 262144)
+            {
+                //doo processing all in window
+                //fft
+                fft fft_all(input_data);
+                fft_data = fft_all.get_data();
+
+                //process
+
+                //uint32_t index = 1000;
+                //100 cut out noises for low pass
+                //110 let noises for high pass, 150000 cuts it out, 50000 small noises, 30000 somewhat recognizable,
+                //10000 sounds about right, 5000 better
+                //filter fil(index, fft_data);
+                //transformed_data = fil.low_pass();
+                transformed_data = process_type(fft_all, type, f1, f2, e, sampling_rate);
+
+                //ifft
+                i_fft ifft_all(transformed_data);
+
+                //output
+                output_data = ifft_all.get_data();
+            }
+            else
+            {
+                //process in separate windows
+                output_data = window(input_size, input_data, type, f1, f2, e, sampling_rate);
+            }
+        }
+        else //channel ==2
+        {
+            //split up input_data into two left and right channels
+            //if each is different
+
+            vector<complex<double>> left;
+            vector<complex<double>> right;
+            vector<complex<double>> fft_left_data;
+            vector<complex<double>> fft_right_data;
+            vector<complex<double>> transformed_left;
+            vector<complex<double>> transformed_right;
+            vector<complex<double>> output_left;
+            vector<complex<double>> output_right;
+            uint64_t channel_size = input_size / 2;
+
+            for (uint32_t j = 0; j < channel_size; j++)
+            {
+                left.push_back(input_data[j * 2]);
+                right.push_back(input_data[(j * 2) + 1]);
+            }
+            if (channel_size <= 262144)
+            {
+                //doo processing all in window
+                //fft
+                fft fft_left(left);
+                fft fft_right(right);
+                fft_left_data = fft_left.get_data();
+                fft_right_data = fft_right.get_data();
+
+                //process
+
+                //uint32_t index = 8000;
+                //100 cut out noises for low pass
+                //110 let noises for high pass, 150000 cuts it out, 50000 small noises, 30000 somewhat recognizable,
+                // //10000 sounds about right, 5000 better
+                // filter fil_left(index, fft_left_data);
+                // filter fil_right(index, fft_right_data);
+                // transformed_left = fil_left.low_pass();
+                // transformed_right = fil_right.low_pass();
+
+                transformed_left = process_type(fft_left, type, f1, f2, e, sampling_rate);
+                transformed_right = process_type(fft_right, type, f1, f2, e, sampling_rate);
+
+                //ifft
+                i_fft ifft_left(transformed_left);
+                i_fft ifft_right(transformed_right);
+
+                //output
+                output_left = ifft_left.get_data();
+                output_right = ifft_right.get_data();
+            }
+            else
+            {
+
+                //have to window
+                //process in separate windows
+                output_left = window(channel_size, left, type, f1, f2, e, sampling_rate);
+                output_right = window(channel_size, right, type, f1, f2, e, sampling_rate);
+            }
+            //combine output
+            for (uint32_t j = 0; j < channel_size; j++)
+            {
+                output_data.push_back(output_left[j]);
+                output_data.push_back(output_right[j]);
+            }
+        }
+    }
+
+    //member functions
+
+    vector<complex<double>> window(uint64_t &input_size, vector<complex<double>> &input_data, string &type, frequency &f1, frequency &f2, equalize &e, uint32_t &sampling_rate)
+    {
+        vector<double> ramp; //linear ramp from 0 to 1 of length of window size
+        vector<complex<double>> fft_data;
+        vector<complex<double>> ifft_data;
+        vector<complex<double>> transformed_data;
+        vector<complex<double>> final;
         // Window
         //uint64_t window_size = 1024;
         //uint64_t window_size = 2097152;
         uint64_t window_size = 262144;
-        uint64_t num_windows = input_data.size() / window_size;
-        cout << input_data.size() << "\n";
-        cout << num_windows << "\n";
+        uint64_t num_windows = input_size / window_size;
+        uint32_t progress_counter = 1; //progress counter for windowing
 
         ramp.push_back(0);
 
@@ -712,22 +887,25 @@ public:
 
         for (uint32_t i = 0; i < (num_windows - 1); i++)
         {
+
+            cout << "[";
+            //number of loops completed
+            for (uint32_t progress = 0; progress < progress_counter; progress++)
+            {
+                cout << "-";
+            }
+            //number of loops remaining
+            for (uint32_t progress = progress_counter; progress < (num_windows - 1); progress++)
+            {
+                cout << " ";
+            }
+            //percentage of loop completion
+            cout << "]" << round((double)progress_counter / (double)(num_windows - 1) * (double)100) << "% \r";
+
             //bad to initialize each time?
             vector<complex<double>> chunk_one(input_data.begin() + (i * window_size), input_data.begin() + ((i * window_size) + window_size));
             vector<complex<double>> chunk_two(input_data.begin() + ((i * window_size) + window_size), input_data.begin() + ((i * window_size) + (2 * window_size)));
-            // for (uint32_t k = 0; k < chunk_one.size(); k++)
-            // {
-            //     cout << "chunk one" << chunk_one[k] << "\n";
-            // }
-            // for (uint32_t k = 0; k < chunk_two.size(); k++)
-            // {
-            //     cout << "chunk two" << chunk_two[k] << "\n";
-            // }
 
-            //transform data by linear ramp
-            //multiply chunk one by ramp
-            //chunk two = chunk two - (ramp*chunk_two)
-            ///////////////////////////////////////////////////////
             for (uint32_t k = 0; k < chunk_one.size(); k++)
             {
 
@@ -747,20 +925,21 @@ public:
 
             //frequency input_freq(argv[3]);
             // uint32_t freq = input_freq.get_data();
-            uint32_t sampling_rate = input.get_samp();
+            //uint32_t sampling_rate = input.get_samp();
 
             //output_data1 = df1.low_pass(df1_data, freq, sampling_rate);
             // // output_data2 = df2.low_pass(df2_data, freq, sampling_rate);
             ////////////////////////////////////////////////////////////
             //low pass filter
             //uint32_t index = fft_chunk_one.get_index(input_freq, sampling_rate);
-            uint32_t index = 4800;
+            //uint32_t index = 50000;
             //100 cut out noises for low pass
             //110 let noises for high pass, 150000 cuts it out, 50000 small noises, 30000 somewhat recognizable,
             //10000 sounds about right, 5000 better
-            filter fil(index, fft_data);
-            transformed_data = fil.low_pass();
+            //filter fil(index, fft_data);
+            //transformed_data = fil.low_pass();
             //transformed_data = fil.high_pass();
+            transformed_data = process_type(fft_chunk_one, type, f1, f2, e, sampling_rate);
             ///////////////////////////////////////////////////////
 
             ////////////////////////////////////////////////////////
@@ -772,51 +951,70 @@ public:
 
             ifft_data = ifft_chunk_one.get_data();
 
-            ///////////////////////////////////////////////////////////////
-
-            //output.insert(output.begin(), chunk_one.size(), 0);
-
-            //cout << output.size() << "\n";
-
-            // for (uint32_t k = 0; k < chunk_one.size(); k++)
-            // {
-            //     output[k] = dat1[k] + dat2[k];
-            // }
-            // cout << output.size() << "\n";
-
-            //add ifft in specific way
-            // ///////////////////////////////////////////////////////////////
             if (i == 0)
             {
-                output_data.insert(output_data.begin(), input_data.size(), 0);
+                final.insert(final.begin(), input_data.size(), 0);
             }
-
-            /////////////////
-            // for (uint32_t k = 0; k < chunk_one.size(); k++)
-            // {
-            //     //starting position
-            //     output[(i * window_size) + k] = output[(i * window_size) + k] + dat1[k];
-            // }
-            // for (uint32_t k = 0; k < chunk_two.size(); k++)
-            // {
-            //     //starting position
-            //     output[(i * window_size) + window_size + k] = output[(i * window_size) + window_size + k] + dat2[k];
-            // }
-            // ///////////////////////////////////////////////////////////////
 
             for (uint32_t k = 0; k < ifft_data.size(); k++)
             {
                 //starting position
 
-                output_data[(i * window_size) + k] = output_data[(i * window_size) + k] + ifft_data[k];
+                final[(i * window_size) + k] = final[(i * window_size) + k] + ifft_data[k];
                 //cout << "output" << output[(i * window_size) + k] << "\n";
             }
 
-            cout << "loop end \n";
+            progress_counter++;
         }
+        cout << "\n";
+        return final;
     }
 
-    //member functions
+    vector<complex<double>> process_type(fft &_fft, string &type, frequency &f1, frequency &f2, equalize &e, uint32_t f_samp)
+    {
+        uint32_t index;
+        uint32_t index_two;
+        vector<complex<double>> fft_data;
+        vector<complex<double>> transformed_data;
+        fft_data = _fft.get_data();
+        if (type == "low")
+        {
+            //get index
+
+            index = _fft.get_index(f1, f_samp);
+            //declare filter
+            filter low_fil(index, fft_data);
+
+            //get member function
+            transformed_data = low_fil.low_pass();
+        }
+        if (type == "high")
+        {
+            //get index
+            index = _fft.get_index(f1, f_samp);
+
+            //declare filter
+            filter high_fil(index, fft_data);
+
+            //get member function
+            transformed_data = high_fil.high_pass();
+        }
+        if (type == "band")
+        {
+            //add this
+            index = _fft.get_index(f1, f_samp);
+            index_two = _fft.get_index(f2, f_samp);
+
+            filter band_fil(index, index_two, fft_data);
+
+            transformed_data = band_fil.band_pass();
+        }
+        if (type == "equalize")
+        {
+            transformed_data = e.flat_band(_fft, f_samp);
+        }
+        return transformed_data;
+    }
 
     vector<complex<double>> get_data()
     {
@@ -828,206 +1026,90 @@ private:
 };
 int main(int argc, char *argv[])
 {
-    if (argc == 4)
+    if (argc == 5 || argc == 6 || argc == 14)
     {
+        //for band pass first argument must be smaller
+
         try
         {
             vector<complex<double>> input_data;
             vector<complex<double>> output_data;
-            //vector<complex<double>> fft_data;
-            // vector<complex<double>> ifft_data;
-            //vector<complex<double>> freq_data;
-            //vector<complex<double>> transformed_data;
-            string arg_two;
+            string arg_two;   //do I need to check outgile name, are there restructions or will any string
+            string arg_three; //low, high, band, equalize
 
-            uint16_t channel;
-
+            arg_two = argv[2];
+            if (arg_two.size() < 4)
+            {
+                throw invalid_argument("Output file name is less that 4 characters.");
+            }
+            if (arg_two.substr((arg_two.size() - 4), 4) != ".wav")
+            {
+                throw invalid_argument("Output file name is missing \".wav\" extension.");
+            }
             // Read and validate WAV file.
             wav_file input(argv[1]);
+            arg_three = argv[3];
 
-            //Get number of channels.
-            channel = input.get_channel();
-            if (channel == 2)
+            switch (argc)
             {
-                //do i make below a class and function of its own
+            case 5:
+
+                if (arg_three != "low" && arg_three != "high")
+                {
+                    throw invalid_argument("Provided 4 arguments to program. Third argument is not \"low\" or \"high\". \n");
+                }
+                else
+                {
+                    frequency input_freq(argv[4]);
+                    equalize buffer;
+                    process_audio processor(input, arg_three, input_freq, input_freq, buffer);
+                    output_data = processor.get_data();
+                }
+                break;
+
+            case 6:
+                if (arg_three != "band")
+                {
+                    throw invalid_argument("Provided 5 arguments to program. Third argument is not \"band\". \n");
+                }
+                else
+                {
+                    frequency lower_freq(argv[4]);
+                    frequency upper_freq(argv[5]);
+
+                    uint32_t lower = lower_freq.get_frequency();
+                    uint32_t upper = upper_freq.get_frequency();
+
+                    if (upper <= lower)
+                    {
+                        throw invalid_argument("Second frequency argument is smaller than first frequency argument. \n");
+                    }
+                    equalize buffer;
+                    process_audio processor(input, arg_three, lower_freq, upper_freq, buffer);
+                    output_data = processor.get_data();
+                }
+                break;
+            case 14:
+                if (arg_three != "equalize")
+                {
+                    throw invalid_argument("Provided 13 arguments to program. Third argument is not \"equalize\". \n");
+                }
+                else
+                {
+                    uint32_t buffer = 20;
+                    frequency buffer_1(buffer);
+                    frequency buffer_2(buffer);
+                    equalize modify(argv[4], argv[5], argv[6], argv[7], argv[8], argv[9], argv[10], argv[11], argv[12], argv[13]);
+                    process_audio processor(input, arg_three, buffer_1, buffer_2, modify);
+                    output_data = processor.get_data();
+                }
+
+                break;
             }
 
-            process_audio process(input);
-
-            output_data = process.get_data();
-
-            // input_data = input.get_data();
-
-            // // Window
-            // //uint64_t window_size = 1024;
-            // //uint64_t window_size = 2097152;
-            // uint64_t window_size = 262144;
-            // uint64_t num_windows = input_data.size() / window_size;
-            // cout << input_data.size() << "\n";
-            // cout << num_windows << "\n";
-
-            // vector<double> ramp; //linear ramp from 0 to 1 of length of window size
-            // ramp.push_back(0);
-
-            // //create ramp
-            // for (uint32_t j = 1; j < (window_size - 1); j++)
-            // {
-            //     ramp.push_back(((double)j) / ((double)window_size - 1));
-            // }
-
-            // //end ramp
-            // ramp.push_back(1);
-
-            //seems right
-            // for (uint32_t j = 0; j < ramp.size(); j++)
-            // {
-            //     cout << "at " << j << ramp[j] << "\n";
-            // }
-
-            // separate input data into 2^something parts
-
-            // for (uint32_t i = 0; i < (num_windows - 1); i++)
-            // {
-            //     //bad to initialize each time?
-            //     vector<complex<double>> chunk_one(input_data.begin() + (i * window_size), input_data.begin() + ((i * window_size) + window_size));
-            //     vector<complex<double>> chunk_two(input_data.begin() + ((i * window_size) + window_size), input_data.begin() + ((i * window_size) + (2 * window_size)));
-            //     // for (uint32_t k = 0; k < chunk_one.size(); k++)
-            //     // {
-            //     //     cout << "chunk one" << chunk_one[k] << "\n";
-            //     // }
-            //     // for (uint32_t k = 0; k < chunk_two.size(); k++)
-            //     // {
-            //     //     cout << "chunk two" << chunk_two[k] << "\n";
-            //     // }
-
-            //     //transform data by linear ramp
-            //     //multiply chunk one by ramp
-            //     //chunk two = chunk two - (ramp*chunk_two)
-            //     ///////////////////////////////////////////////////////
-            //     for (uint32_t k = 0; k < chunk_one.size(); k++)
-            //     {
-
-            //         chunk_one[k] = chunk_one[k] * ramp[k];
-            //         chunk_two[k] = chunk_two[k] - (chunk_two[k] * ramp[k]);
-            //     }
-
-            //     /////////////////////////////////////////////////////////////
-
-            //     //fft big chunk
-            //     //make chucnk one big vector
-            //     chunk_one.insert(chunk_one.end(), chunk_two.begin(), chunk_two.end());
-            //     fft fft_chunk_one(chunk_one);
-
-            //     //do the ifft on each part
-            //     fft_data = fft_chunk_one.get_data();
-
-            //     frequency input_freq(argv[3]);
-            //     // uint32_t freq = input_freq.get_data();
-            //     uint32_t sampling_rate = input.get_samp();
-
-            //     //output_data1 = df1.low_pass(df1_data, freq, sampling_rate);
-            //     // // output_data2 = df2.low_pass(df2_data, freq, sampling_rate);
-            //     ////////////////////////////////////////////////////////////
-            //     //low pass filter
-            //     //uint32_t index = fft_chunk_one.get_index(input_freq, sampling_rate);
-            //     uint32_t index = 4800;
-            //     //100 cut out noises for low pass
-            //     //110 let noises for high pass, 150000 cuts it out, 50000 small noises, 30000 somewhat recognizable,
-            //     //10000 sounds about right, 5000 better
-            //     filter fil(index, fft_data);
-            //     transformed_data = fil.low_pass();
-            //     //transformed_data = fil.high_pass();
-            //     ///////////////////////////////////////////////////////
-
-            //     ////////////////////////////////////////////////////////
-            //     //testing
-            //     //i_fft if1(output_data1);
-            //     i_fft ifft_chunk_one(transformed_data);
-
-            //     //testing
-
-            //     ifft_data = ifft_chunk_one.get_data();
-
-            //     ///////////////////////////////////////////////////////////////
-
-            //     //output.insert(output.begin(), chunk_one.size(), 0);
-
-            //     //cout << output.size() << "\n";
-
-            //     // for (uint32_t k = 0; k < chunk_one.size(); k++)
-            //     // {
-            //     //     output[k] = dat1[k] + dat2[k];
-            //     // }
-            //     // cout << output.size() << "\n";
-
-            //     //add ifft in specific way
-            //     // ///////////////////////////////////////////////////////////////
-            //     if (i == 0)
-            //     {
-            //         output_data.insert(output_data.begin(), input_data.size(), 0);
-            //     }
-
-            //     /////////////////
-            //     // for (uint32_t k = 0; k < chunk_one.size(); k++)
-            //     // {
-            //     //     //starting position
-            //     //     output[(i * window_size) + k] = output[(i * window_size) + k] + dat1[k];
-            //     // }
-            //     // for (uint32_t k = 0; k < chunk_two.size(); k++)
-            //     // {
-            //     //     //starting position
-            //     //     output[(i * window_size) + window_size + k] = output[(i * window_size) + window_size + k] + dat2[k];
-            //     // }
-            //     // ///////////////////////////////////////////////////////////////
-
-            //     for (uint32_t k = 0; k < ifft_data.size(); k++)
-            //     {
-            //         //starting position
-
-            //         output_data[(i * window_size) + k] = output_data[(i * window_size) + k] + ifft_data[k];
-            //         //cout << "output" << output[(i * window_size) + k] << "\n";
-            //     }
-
-            //     cout << "loop end \n";
-            // }
-
-            // for (uint32_t k = 0; k < output.size(); k++)
-            // {
-            //     cout << "final output: " << output[k] << "\n";
-            // }
-            // // Compute FFT on input WAV file.
-            // fft dft(input_data);
-            // freq_data = dft.get_data();
-
-            // arg_two = argv[2];
-            // if (arg_two != "low")
-            // {
-            //     cout << "Invalid argument for filter. Valid arguments are: \"low\" \n";
-            //     return -1;
-            // }
-
-            // frequency input_freq(argv[3]);
-            // uint32_t freq = input_freq.get_data();
-            // uint32_t sampling_rate = input.get_samp();
-
-            // // Compute low pass filter on frequency domain
-            // output_data = dft.low_pass(freq_data, freq, sampling_rate);
-
-            // // Compute inverse FFT on input FFT values.
-            // i_fft output(output_data);
-
-            // Write inverse FFT values to output WAV file.
-            //string input_header = input.get_header();
-            //int16_t write_status = output.write_wav(input_header);
-
-            // if (write_status < 0)
-            // {
-            //     return -1;
-            // }
-
-            //////////////////TEMP FILE WRITING////////////////////////////////////
+            //////////////////FILE WRITING////////////////////////////////////
             wav_file output(input, output_data);
-            output.write_wav();
+            output.write_wav(arg_two);
             cout << "end\n";
             //////////////////////////////////////////////////////////////////
         }
@@ -1050,9 +1132,14 @@ int main(int argc, char *argv[])
     }
     else
     {
-        cout << (argc - 1) << " argument(s) provided to program. Program requires three arguments: \n";
-        cout << "1. The name of a WAV audio file: \"filename.wav\" \n";
-        cout << "2. Digital filter to apply: \"low\" \n";
-        cout << "3. Frequency (Hz) to apply filter with: ex. 800 \n";
+        cout << (argc - 1) << " argument(s) provided to program. Program expects: \n";
+        cout << "1. The name of a WAV audio file. Example: \"infile.wav\" \n";
+        cout << "2. The name of the desired output WAV audio file. Example: \"outfile.wav\" \n";
+        cout << "3. The type of audio processing to perform. Valid arguments are: \"low\", \"high\", \"band\", \"equalize\" \n";
+        cout << "4. The arguments to be passed to the type of audio process. \n";
+        cout << "\t low: One frequency value in (20,20000) Hz to apply the low-pass filter. Example: 1000 \n";
+        cout << "\t high: One frequency value in (20,20000) Hz to apply the high-pass filter. Example: 1000 \n";
+        cout << "\t band: Two frequency values in (20,20000) Hz to apply the band-pass filter. Example: 1000 6000\n";
+        cout << "\t equalize: Ten integer values between (-24,24) to scale frequency bands. Example: 1 12 0 0 -3 8 -8 9 1 0  \n";
     }
 }
