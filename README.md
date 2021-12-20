@@ -132,13 +132,15 @@ To mix signals the two input WAV files must contain the same number of channels.
 
 3. Concatenating identifier `add`.
 4. A WAV audio file name with a maximum file size of 12 MB to be concatenated after the first WAV file. 
+   
     *Example command line input* 
     `FFT_audio alphabet.wav output.wav add piano.wav`
 
 **Overlapping Signals**
 
-3. Overlapping identifier `overlap`.
-4. A WAV audio file name with a maximum file size of 12 MB to be overlapped with the first WAV file. 
+1. Overlapping identifier `overlap`.
+2. A WAV audio file name with a maximum file size of 12 MB to be overlapped with the first WAV file. 
+   
     *Example command line input* 
     `FFT_audio alphabet.wav output.wav overlap piano.wav`
 
